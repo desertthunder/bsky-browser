@@ -234,9 +234,10 @@ func batchWriter(ctx context.Context, ch <-chan *PostResult, batchSize int) (int
 
 // RefreshAndIndex fetches all bookmarks and likes concurrently with batch writes
 //
-// Creates a channel for bookmarks and likes, starts two goroutines to fetch them concurrently,
-// waits for them to complete, and then closes the channel. It then starts a batch writer that
-// reads from the channel and inserts posts into the database in batches of 10.
+// Creates a channel for bookmarks and likes, starts two goroutines to fetch
+// them  concurrently, waits for them to complete, and then closes the channel.
+// It then starts a batch writer that reads from the channel and inserts posts
+// into the database in batches of 10.
 func (c *BlueskyClient) RefreshAndIndex(ctx context.Context, limit int) error {
 	logger.Info("Starting refresh and index", "limit", limit)
 
