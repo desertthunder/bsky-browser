@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -36,6 +37,7 @@ type Auth struct {
 	AccessJWT  string
 	RefreshJWT string
 	PDSURL     string
+	SessionID  string
 	UpdatedAt  time.Time
 }
 
@@ -45,13 +47,15 @@ type SearchResult struct {
 }
 
 func Open(dbPath string) error {
+	logger.Debug("opening database", "path", dbPath)
+
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create database directory: %w", err)
 	}
 
 	var err error
-	db, err = sql.Open("sqlite3", dbPath+"?_pragma=foreign_keys(1)")
+	db, err = sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -60,27 +64,41 @@ func Open(dbPath string) error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	logger.Debug("database connection established")
+
 	if err := runMigrations(); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
+	logger.Debug("database migrations completed successfully")
 	return nil
 }
 
 func runMigrations() error {
-	schema, err := migrationsFS.ReadFile("migrations/000_initial_schema.sql")
-	if err != nil {
-		return fmt.Errorf("failed to read schema: %w", err)
+	migrations := []string{
+		"migrations/000_initial_schema.sql",
+		"migrations/001_add_session_id.sql",
 	}
 
-	if _, err := db.Exec(string(schema)); err != nil {
-		return fmt.Errorf("failed to execute schema: %w", err)
+	for _, migration := range migrations {
+		content, err := migrationsFS.ReadFile(migration)
+		if err != nil {
+			return fmt.Errorf("failed to read migration %s: %w", migration, err)
+		}
+
+		if _, err := db.Exec(string(content)); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("failed to execute migration %s: %w", migration, err)
+			}
+		}
 	}
 
 	return nil
 }
 
 func InsertPost(post *Post) error {
+	logger.Debug("inserting post", "uri", post.URI, "author", post.AuthorHandle)
+
 	query := `
 		INSERT INTO posts (uri, cid, author_did, author_handle, text, created_at, like_count, repost_count, reply_count, source)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -110,18 +128,25 @@ func InsertPost(post *Post) error {
 		post.Source,
 	)
 
+	if err != nil {
+		logger.Error("failed to insert post", "uri", post.URI, "error", err)
+	}
+
 	return err
 }
 
 func UpsertAuth(auth *Auth) error {
+	logger.Debug("upserting auth", "did", auth.DID, "handle", auth.Handle)
+
 	query := `
-		INSERT INTO auth (did, handle, access_jwt, refresh_jwt, pds_url, updated_at)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO auth (did, handle, access_jwt, refresh_jwt, pds_url, session_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(did) DO UPDATE SET
 			handle = excluded.handle,
 			access_jwt = excluded.access_jwt,
 			refresh_jwt = excluded.refresh_jwt,
 			pds_url = excluded.pds_url,
+			session_id = excluded.session_id,
 			updated_at = CURRENT_TIMESTAMP
 	`
 
@@ -131,16 +156,25 @@ func UpsertAuth(auth *Auth) error {
 		auth.AccessJWT,
 		auth.RefreshJWT,
 		auth.PDSURL,
+		auth.SessionID,
 	)
+
+	if err != nil {
+		logger.Error("failed to upsert auth", "did", auth.DID, "error", err)
+	}
 
 	return err
 }
 
 func GetAuth() (*Auth, error) {
-	query := `SELECT did, handle, access_jwt, refresh_jwt, pds_url, updated_at FROM auth LIMIT 1`
+	logger.Debug("loading auth from database")
+
+	query := `SELECT did, handle, access_jwt, refresh_jwt, pds_url, session_id, updated_at FROM auth LIMIT 1`
 
 	var auth Auth
 	var updatedAt string
+
+	var sessionID sql.NullString
 
 	err := db.QueryRow(query).Scan(
 		&auth.DID,
@@ -148,21 +182,31 @@ func GetAuth() (*Auth, error) {
 		&auth.AccessJWT,
 		&auth.RefreshJWT,
 		&auth.PDSURL,
+		&sessionID,
 		&updatedAt,
 	)
 
+	if sessionID.Valid {
+		auth.SessionID = sessionID.String
+	}
+
 	if err == sql.ErrNoRows {
+		logger.Debug("no auth record found in database")
 		return nil, nil
 	}
 	if err != nil {
+		logger.Error("failed to load auth", "error", err)
 		return nil, err
 	}
 
 	auth.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+	logger.Debug("auth loaded successfully", "did", auth.DID, "handle", auth.Handle)
 	return &auth, nil
 }
 
 func SearchPosts(query string, source string) ([]SearchResult, error) {
+	logger.Debug("searching posts", "query", query, "source", source)
+
 	sql := `
 		SELECT p.uri, p.cid, p.author_did, p.author_handle, p.text, p.created_at,
 			   p.like_count, p.repost_count, p.reply_count, p.source, p.indexed_at,
@@ -177,6 +221,7 @@ func SearchPosts(query string, source string) ([]SearchResult, error) {
 
 	rows, err := db.Query(sql, query, source, source)
 	if err != nil {
+		logger.Error("failed to execute search query", "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -209,12 +254,19 @@ func SearchPosts(query string, source string) ([]SearchResult, error) {
 		results = append(results, r)
 	}
 
+	logger.Debug("search completed", "results", len(results))
 	return results, rows.Err()
 }
 
 func Close() error {
+	logger.Debug("closing database connection")
 	if db != nil {
-		return db.Close()
+		err := db.Close()
+		if err != nil {
+			logger.Error("failed to close database", "error", err)
+			return err
+		}
+		logger.Debug("database connection closed")
 	}
 	return nil
 }

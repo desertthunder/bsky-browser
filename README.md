@@ -1,6 +1,6 @@
 # BlueSky Browser
 
-A Golang CLI (`bsky-browser`) that uses **lipgloss/fang** (wrapper around cobra) to search, browse, and manage a user's Bluesky saved/bookmarked and liked posts offline via SQLite FTS5.
+A Golang CLI (`bsky-browser`) to search & browse your Bluesky saved/bookmarked and liked posts.
 
 ## Build
 

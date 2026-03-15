@@ -18,13 +18,13 @@
 
 ## Milestone 3 — Authentication
 
-- [ ] Add `bluesky-social/indigo` dependency
-- [ ] Implement `auth.go` — loopback OAuth client via `oauth.NewLocalhostConfig`
-- [ ] Handle PKCE + DPoP (provided by indigo SDK)
-- [ ] Persist tokens to SQLite via `database.go`
-- [ ] Implement token refresh on expired access token
-- [ ] Wire `login` subcommand in `cli.go` — opens browser, waits for callback
-- [ ] Wire `whoami` subcommand — load session from DB, print handle + DID
+- [x] Add `bluesky-social/indigo` dependency
+- [x] Implement `auth.go` — loopback OAuth client via `oauth.NewLocalhostConfig`
+- [x] Handle PKCE + DPoP (provided by indigo SDK)
+- [x] Persist tokens to SQLite via `database.go`
+- [x] Implement token refresh on expired access token
+- [x] Wire `login` subcommand in `cli.go` — opens browser, waits for callback
+- [x] Wire `whoami` subcommand — load session from DB, print handle + DID
 
 ## Milestone 4 — Fetching Posts
 
