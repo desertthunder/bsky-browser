@@ -32,13 +32,17 @@ type Post struct {
 }
 
 type Auth struct {
-	DID        string
-	Handle     string
-	AccessJWT  string
-	RefreshJWT string
-	PDSURL     string
-	SessionID  string
-	UpdatedAt  time.Time
+	DID            string
+	Handle         string
+	AccessJWT      string
+	RefreshJWT     string
+	PDSURL         string
+	SessionID      string
+	AuthServerURL  string
+	DPoPAuthNonce  string
+	DPoPHostNonce  string
+	DPoPPrivateKey string
+	UpdatedAt      time.Time
 }
 
 type SearchResult struct {
@@ -78,6 +82,7 @@ func runMigrations() error {
 	migrations := []string{
 		"migrations/000_initial_schema.sql",
 		"migrations/001_add_session_id.sql",
+		"migrations/002_add_oauth_fields.sql",
 	}
 
 	for _, migration := range migrations {
@@ -139,14 +144,19 @@ func UpsertAuth(auth *Auth) error {
 	logger.Debug("upserting auth", "did", auth.DID, "handle", auth.Handle)
 
 	query := `
-		INSERT INTO auth (did, handle, access_jwt, refresh_jwt, pds_url, session_id, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO auth (did, handle, access_jwt, refresh_jwt, pds_url, session_id,
+						  auth_server_url, dpop_auth_nonce, dpop_host_nonce, dpop_private_key, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(did) DO UPDATE SET
 			handle = excluded.handle,
 			access_jwt = excluded.access_jwt,
 			refresh_jwt = excluded.refresh_jwt,
 			pds_url = excluded.pds_url,
 			session_id = excluded.session_id,
+			auth_server_url = excluded.auth_server_url,
+			dpop_auth_nonce = excluded.dpop_auth_nonce,
+			dpop_host_nonce = excluded.dpop_host_nonce,
+			dpop_private_key = excluded.dpop_private_key,
 			updated_at = CURRENT_TIMESTAMP
 	`
 
@@ -157,6 +167,10 @@ func UpsertAuth(auth *Auth) error {
 		auth.RefreshJWT,
 		auth.PDSURL,
 		auth.SessionID,
+		auth.AuthServerURL,
+		auth.DPoPAuthNonce,
+		auth.DPoPHostNonce,
+		auth.DPoPPrivateKey,
 	)
 
 	if err != nil {
@@ -169,12 +183,14 @@ func UpsertAuth(auth *Auth) error {
 func GetAuth() (*Auth, error) {
 	logger.Debug("loading auth from database")
 
-	query := `SELECT did, handle, access_jwt, refresh_jwt, pds_url, session_id, updated_at FROM auth LIMIT 1`
+	query := `SELECT did, handle, access_jwt, refresh_jwt, pds_url, session_id,
+			  auth_server_url, dpop_auth_nonce, dpop_host_nonce, dpop_private_key, updated_at
+			  FROM auth LIMIT 1`
 
 	var auth Auth
 	var updatedAt string
 
-	var sessionID sql.NullString
+	var sessionID, authServerURL, dpopAuthNonce, dpopHostNonce, dpopPrivateKey sql.NullString
 
 	err := db.QueryRow(query).Scan(
 		&auth.DID,
@@ -183,11 +199,27 @@ func GetAuth() (*Auth, error) {
 		&auth.RefreshJWT,
 		&auth.PDSURL,
 		&sessionID,
+		&authServerURL,
+		&dpopAuthNonce,
+		&dpopHostNonce,
+		&dpopPrivateKey,
 		&updatedAt,
 	)
 
 	if sessionID.Valid {
 		auth.SessionID = sessionID.String
+	}
+	if authServerURL.Valid {
+		auth.AuthServerURL = authServerURL.String
+	}
+	if dpopAuthNonce.Valid {
+		auth.DPoPAuthNonce = dpopAuthNonce.String
+	}
+	if dpopHostNonce.Valid {
+		auth.DPoPHostNonce = dpopHostNonce.String
+	}
+	if dpopPrivateKey.Valid {
+		auth.DPoPPrivateKey = dpopPrivateKey.String
 	}
 
 	if err == sql.ErrNoRows {

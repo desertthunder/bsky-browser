@@ -28,11 +28,11 @@
 
 ## Milestone 4 — Fetching Posts
 
-- [ ] Implement `client.go` — authenticated XRPC client from stored session
-- [ ] Implement `FetchBookmarks` — paginate `app.bsky.bookmark.getBookmarks`
-- [ ] Implement `FetchLikes` — paginate `app.bsky.feed.getActorLikes`
-- [ ] Map API responses to `posts` table rows (normalize text, author, timestamps)
-- [ ] Wire `refresh` / `index` subcommand — fetch all + insert into DB
+- [x] Implement `client.go` — authenticated XRPC client from stored session
+- [x] Implement `FetchBookmarks` — paginate `app.bsky.bookmark.getBookmarks`
+- [x] Implement `FetchLikes` — paginate `app.bsky.feed.getActorLikes`
+- [x] Map API responses to `posts` table rows (normalize text, author, timestamps)
+- [x] Wire `refresh` / `index` subcommand — fetch all + insert into DB
 
 ## Milestone 5 — Search & Output
 

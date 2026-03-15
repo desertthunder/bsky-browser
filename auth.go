@@ -133,16 +133,25 @@ func (am *AuthManager) exchangeCode(ctx context.Context, data string) error {
 		return fmt.Errorf("failed to process callback: %w", err)
 	}
 
-	logger.Info("Successfully authenticated", "did", sessData.AccountDID, "session_id", sessData.SessionID)
+	logger.Info("Successfully authenticated",
+		"did", sessData.AccountDID,
+		"session_id", sessData.SessionID,
+		"pds", sessData.HostURL,
+		"auth_server", sessData.AuthServerURL,
+	)
 
 	auth := &Auth{
-		DID:        sessData.AccountDID.String(),
-		Handle:     sessData.AccountDID.String(),
-		AccessJWT:  "",
-		RefreshJWT: "",
-		PDSURL:     "",
-		SessionID:  sessData.SessionID,
-		UpdatedAt:  time.Now(),
+		DID:            sessData.AccountDID.String(),
+		Handle:         sessData.AccountDID.String(),
+		AccessJWT:      sessData.AccessToken,
+		RefreshJWT:     sessData.RefreshToken,
+		PDSURL:         sessData.HostURL,
+		SessionID:      sessData.SessionID,
+		AuthServerURL:  sessData.AuthServerURL,
+		DPoPAuthNonce:  sessData.DPoPAuthServerNonce,
+		DPoPHostNonce:  sessData.DPoPHostNonce,
+		DPoPPrivateKey: sessData.DPoPPrivateKeyMultibase,
+		UpdatedAt:      time.Now(),
 	}
 
 	if err := UpsertAuth(auth); err != nil {

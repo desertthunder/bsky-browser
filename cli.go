@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -42,6 +43,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(newLoginCommand())
 	root.AddCommand(newWhoamiCommand())
+	root.AddCommand(newRefreshCommand())
 
 	return root
 }
@@ -108,6 +110,37 @@ func newWhoamiCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force refresh of handle resolution")
+
+	return cmd
+}
+
+func newRefreshCommand() *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:     "refresh",
+		Aliases: []string{"index"},
+		Short:   "Fetch and index all bookmarks and likes",
+		Long:    "Fetches all your saved bookmarks and liked posts from Bluesky and indexes them into the local SQLite database for offline searching.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			client, err := NewBlueskyClient(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+
+			if err := client.RefreshAndIndex(ctx, limit); err != nil {
+				return fmt.Errorf("failed to refresh and index: %w", err)
+			}
+
+			fmt.Println("✓ Successfully indexed all bookmarks and likes!")
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&limit, "limit", 0, "Limit the number of posts to fetch (0 = no limit)")
 
 	return cmd
 }
