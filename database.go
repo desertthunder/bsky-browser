@@ -302,3 +302,18 @@ func Close() error {
 	}
 	return nil
 }
+
+// CountPosts returns the total number of posts in the database
+func CountPosts() (int, error) {
+	logger.Debug("counting posts in database")
+
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM posts").Scan(&count)
+	if err != nil {
+		logger.Error("failed to count posts", "error", err)
+		return 0, err
+	}
+
+	logger.Debugf("post count: %d", count)
+	return count, nil
+}

@@ -4,23 +4,41 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
+// RootCmd holds root command flags
 type RootCmd struct {
-	Verbose bool
+	Verbose int
 }
 
-func NewRootCommand() *cobra.Command {
+// SearchCmd holds search-specific flags
+type SearchCmd struct {
+	Query string
+	Saved bool
+	Liked bool
+	Force bool
+	Limit int
+}
+
+func rootCmd() *cobra.Command {
 	cmd := &RootCmd{}
+	searchCmd := &SearchCmd{}
 
 	root := &cobra.Command{
-		Use:   "bsky-browser",
+		Use:   "bsky-browser [QUERY]",
 		Short: "A CLI tool for browsing Bluesky bookmarks and likes",
-		Long:  "bsky-browser is a CLI tool that allows you to search and browse your Bluesky bookmarks and likes.",
+		Long: `bsky-browser is a CLI tool that allows you to search and browse your Bluesky bookmarks and likes.
+
+Examples:
+  bsky-browser "golang"              # Search all posts for "golang"
+  bsky-browser "query" --saved       # Search only saved/bookmarked posts
+  bsky-browser "query" --liked       # Search only liked posts
+  bsky-browser -q "query" -f         # Force re-index before searching`,
+		Args: cobra.ArbitraryArgs,
 		PersistentPreRunE: func(c *cobra.Command, args []string) error {
 			if err := initLogger(cmd.Verbose); err != nil {
 				return err
@@ -35,27 +53,130 @@ func NewRootCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(c *cobra.Command, args []string) error {
-			return cmd.Run(c)
+			return searchCmd.Run(c, args)
 		},
 	}
 
-	root.Flags().BoolVarP(&cmd.Verbose, "verbose", "v", false, "Enable verbose logging")
+	// Root flags - use CountVarP to support -v and -vv
+	root.Flags().CountVarP(&cmd.Verbose, "verbose", "v", "Enable verbose logging (use -v for info, -vv for debug)")
 
-	root.AddCommand(newLoginCommand())
-	root.AddCommand(newWhoamiCommand())
-	root.AddCommand(newRefreshCommand())
+	// Search flags
+	root.Flags().StringVarP(&searchCmd.Query, "query", "q", "", "Search query")
+	root.Flags().BoolVar(&searchCmd.Saved, "saved", false, "Search only saved/bookmarked posts")
+	root.Flags().BoolVar(&searchCmd.Liked, "liked", false, "Search only liked posts")
+	root.Flags().BoolVarP(&searchCmd.Force, "force", "f", false, "Force re-index before searching")
+	root.Flags().IntVar(&searchCmd.Limit, "limit", 0, "Limit for re-index (0 = no limit)")
+
+	root.AddCommand(loginCmd())
+	root.AddCommand(whoamiCmd())
+	root.AddCommand(refreshCmd())
 
 	return root
 }
 
-func (cmd *RootCmd) Run(c *cobra.Command) error {
-	logger.Info("bsky-browser started")
-	logger.Debug("verbose mode active", "verbose", cmd.Verbose)
-	fmt.Println("bsky-browser - Run with --help for usage information")
+func (sc *SearchCmd) Run(c *cobra.Command, args []string) error {
+	query := sc.Query
+	if len(args) > 0 && args[0] != "" {
+		query = strings.Join(args, " ")
+	}
+
+	if strings.TrimSpace(query) == "" {
+		return c.Help()
+	}
+
+	if sc.Saved && sc.Liked {
+		return fmt.Errorf("cannot use both --saved and --liked flags")
+	}
+
+	if sc.Force {
+		logger.Info("Force re-index requested")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		client, err := NewBlueskyClient(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create client for re-index: %w", err)
+		}
+
+		if err := client.RefreshAndIndex(ctx, sc.Limit); err != nil {
+			return fmt.Errorf("failed to re-index: %w", err)
+		}
+		fmt.Println("✓ Re-index complete")
+	}
+
+	source := ""
+	if sc.Saved {
+		source = "saved"
+	} else if sc.Liked {
+		source = "liked"
+	}
+
+	logger.Info("Searching", "query", query, "source", source)
+	results, err := SearchPosts(query, source)
+	if err != nil {
+		return fmt.Errorf("search failed: %w", err)
+	}
+
+	if len(results) == 0 {
+		fmt.Println()
+		fmt.Println(emptyStyle.Render("No results found."))
+
+		postCount, _ := CountPosts()
+		if postCount == 0 {
+			fmt.Println()
+			fmt.Println("Your database is empty. Run:")
+			fmt.Println("  bsky-browser refresh")
+			fmt.Println()
+		}
+		return nil
+	}
+
+	sc.displayResults(results)
 	return nil
 }
 
-func newLoginCommand() *cobra.Command {
+func (sc *SearchCmd) displayResults(results []SearchResult) {
+	fmt.Println()
+	for i, result := range results {
+		number := numberStyle.Render(fmt.Sprintf("[%d]", i+1))
+		handle := handleStyle.Render("@" + result.AuthorHandle)
+
+		dateStr := result.CreatedAt.Format("2006-01-02")
+		date := dateStyle.Render(dateStr)
+
+		likeCount := likeStyle.Render(fmt.Sprintf("♥ %d", result.LikeCount))
+
+		text := result.Text
+		if len(text) > 200 {
+			text = text[:200] + "..."
+		}
+
+		meta := handle + metaSeparator() + date + metaSeparator() + likeCount
+
+		url := sc.buildPostURL(result.URI, result.AuthorHandle)
+
+		fmt.Printf("%s %s\n", number, meta)
+		fmt.Printf("    %s\n", textStyle.Render(text))
+		fmt.Printf("    %s\n", urlStyle.Render(url))
+		fmt.Println()
+	}
+
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("Showing %d results", len(results))))
+}
+
+// buildPostURL converts an AT URI to a bsky.app URL
+// at://did:plc:.../app.bsky.feed.post/rkey
+// -> https://bsky.app/profile/handle/post/rkey
+func (sc *SearchCmd) buildPostURL(uri, handle string) string {
+	parts := strings.Split(uri, "/")
+	if len(parts) >= 2 {
+		rkey := parts[len(parts)-1]
+		return fmt.Sprintf("https://bsky.app/profile/%s/post/%s", handle, rkey)
+	}
+	return uri
+}
+
+func loginCmd() *cobra.Command {
 	var handle string
 
 	cmd := &cobra.Command{
@@ -85,7 +206,7 @@ func newLoginCommand() *cobra.Command {
 	return cmd
 }
 
-func newWhoamiCommand() *cobra.Command {
+func whoamiCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
@@ -99,12 +220,8 @@ func newWhoamiCommand() *cobra.Command {
 				return err
 			}
 
-			style := lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#7D56F4"))
-
-			fmt.Printf("%s %s\n", style.Render("Username:"), auth.Handle)
-			fmt.Printf("%s %s\n", style.Render("DID:"), auth.DID)
+			fmt.Printf("%s %s\n", keyStyle.Render("Username:"), auth.Handle)
+			fmt.Printf("%s %s\n", keyStyle.Render("DID:"), auth.DID)
 			return nil
 		},
 	}
@@ -114,7 +231,7 @@ func newWhoamiCommand() *cobra.Command {
 	return cmd
 }
 
-func newRefreshCommand() *cobra.Command {
+func refreshCmd() *cobra.Command {
 	var limit int
 
 	cmd := &cobra.Command{
@@ -123,7 +240,7 @@ func newRefreshCommand() *cobra.Command {
 		Short:   "Fetch and index all bookmarks and likes",
 		Long:    "Fetches all your saved bookmarks and liked posts from Bluesky and indexes them into the local SQLite database for offline searching.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 
 			client, err := NewBlueskyClient(ctx)

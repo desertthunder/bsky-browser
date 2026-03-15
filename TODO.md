@@ -36,12 +36,12 @@
 
 ## Milestone 5 — Search & Output
 
-- [ ] Implement FTS5 search query with BM25 ranking in `database.go`
-- [ ] Support `--saved` / `--liked` source filtering
-- [ ] Wire root command to accept positional arg or `-q` flag as search query
-- [ ] Wire `-f` flag to force re-index before searching
-- [ ] Styled search result output with `lipgloss` (handle, date, like count, text, URL)
-- [ ] Handle empty results and no-index-yet states gracefully
+- [x] Implement FTS5 search query with BM25 ranking in `database.go`
+- [x] Support `--saved` / `--liked` source filtering
+- [x] Wire root command to accept positional arg or `-q` flag as search query
+- [x] Wire `-f` flag to force re-index before searching
+- [x] Styled search result output with `lipgloss` (handle, date, like count, text, URL)
+- [x] Handle empty results and no-index-yet states gracefully
 
 ## Milestone 6 — Polish
 
