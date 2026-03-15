@@ -45,8 +45,8 @@
 
 ## Milestone 6 — Polish
 
-- [ ] Styled `whoami` output with `lipgloss`
-- [ ] Log file rotation or max size guard
-- [ ] Graceful error messages for network failures, auth expiry, missing DB
-- [ ] `--help` examples on each subcommand
-- [ ] README with install and usage instructions
+- [x] Skip already indexed posts on refresh (compare by URI)
+- [x] Styled `whoami` output with `lipgloss`
+- [x] Log file rotation and/or max size guard
+- [x] Graceful error messages for network failures, auth expiry, missing DB
+- [x] `--help` examples on each subcommand

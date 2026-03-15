@@ -141,17 +141,19 @@ func (am *AuthManager) exchangeCode(ctx context.Context, data string) error {
 	)
 
 	auth := &Auth{
-		DID:            sessData.AccountDID.String(),
-		Handle:         sessData.AccountDID.String(),
-		AccessJWT:      sessData.AccessToken,
-		RefreshJWT:     sessData.RefreshToken,
-		PDSURL:         sessData.HostURL,
-		SessionID:      sessData.SessionID,
-		AuthServerURL:  sessData.AuthServerURL,
-		DPoPAuthNonce:  sessData.DPoPAuthServerNonce,
-		DPoPHostNonce:  sessData.DPoPHostNonce,
-		DPoPPrivateKey: sessData.DPoPPrivateKeyMultibase,
-		UpdatedAt:      time.Now(),
+		DID:                          sessData.AccountDID.String(),
+		Handle:                       sessData.AccountDID.String(),
+		AccessJWT:                    sessData.AccessToken,
+		RefreshJWT:                   sessData.RefreshToken,
+		PDSURL:                       sessData.HostURL,
+		SessionID:                    sessData.SessionID,
+		AuthServerURL:                sessData.AuthServerURL,
+		AuthServerTokenEndpoint:      sessData.AuthServerTokenEndpoint,
+		AuthServerRevocationEndpoint: sessData.AuthServerRevocationEndpoint,
+		DPoPAuthNonce:                sessData.DPoPAuthServerNonce,
+		DPoPHostNonce:                sessData.DPoPHostNonce,
+		DPoPPrivateKey:               sessData.DPoPPrivateKeyMultibase,
+		UpdatedAt:                    time.Now(),
 	}
 
 	if err := UpsertAuth(auth); err != nil {

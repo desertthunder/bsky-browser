@@ -183,6 +183,11 @@ func loginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "Login to Bluesky via OAuth",
 		Long:  "Opens a browser to authenticate with Bluesky using OAuth. After successful authentication, your tokens will be stored locally.",
+		Example: `  # Interactive login (prompts for handle)
+  bsky-browser login
+
+  # Non-interactive login
+  bsky-browser login --handle yourname.bsky.social`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if handle == "" {
 				fmt.Print("Enter your Bluesky handle (e.g., alice.bsky.social): ")
@@ -213,6 +218,11 @@ func whoamiCmd() *cobra.Command {
 		Use:   "whoami",
 		Short: "Display current user information",
 		Long:  "Shows the handle and DID of the currently authenticated user. The handle is resolved from the DID via an API call and cached. Use --force to refresh the cached handle.",
+		Example: `  # Show current user
+  bsky-browser whoami
+
+  # Force refresh handle from API
+  bsky-browser whoami -f`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			am := NewAuthManager()
 			auth, err := am.Whoami(force)
@@ -239,6 +249,11 @@ func refreshCmd() *cobra.Command {
 		Aliases: []string{"index"},
 		Short:   "Fetch and index all bookmarks and likes",
 		Long:    "Fetches all your saved bookmarks and liked posts from Bluesky and indexes them into the local SQLite database for offline searching.",
+		Example: `  # Fetch all bookmarks and likes
+  bsky-browser refresh
+
+  # Fetch only 50 posts for testing
+  bsky-browser refresh --limit 50`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()

@@ -32,17 +32,19 @@ type Post struct {
 }
 
 type Auth struct {
-	DID            string
-	Handle         string
-	AccessJWT      string
-	RefreshJWT     string
-	PDSURL         string
-	SessionID      string
-	AuthServerURL  string
-	DPoPAuthNonce  string
-	DPoPHostNonce  string
-	DPoPPrivateKey string
-	UpdatedAt      time.Time
+	DID                          string
+	Handle                       string
+	AccessJWT                    string
+	RefreshJWT                   string
+	PDSURL                       string
+	SessionID                    string
+	AuthServerURL                string
+	AuthServerTokenEndpoint      string
+	AuthServerRevocationEndpoint string
+	DPoPAuthNonce                string
+	DPoPHostNonce                string
+	DPoPPrivateKey               string
+	UpdatedAt                    time.Time
 }
 
 type SearchResult struct {
@@ -83,6 +85,7 @@ func runMigrations() error {
 		"migrations/000_initial_schema.sql",
 		"migrations/001_add_session_id.sql",
 		"migrations/002_add_oauth_fields.sql",
+		"migrations/003_add_token_endpoint.sql",
 	}
 
 	for _, migration := range migrations {
@@ -101,8 +104,29 @@ func runMigrations() error {
 	return nil
 }
 
+// PostExists checks if a post with the given URI already exists in the database
+func PostExists(uri string) (bool, error) {
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM posts WHERE uri = ?)", uri).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func InsertPost(post *Post) error {
 	logger.Debug("inserting post", "uri", post.URI, "author", post.AuthorHandle)
+
+	exists, err := PostExists(post.URI)
+	if err != nil {
+		logger.Error("failed to check if post exists", "uri", post.URI, "error", err)
+		return err
+	}
+
+	if exists {
+		logger.Debug("skipping already indexed post", "uri", post.URI)
+		return nil
+	}
 
 	query := `
 		INSERT INTO posts (uri, cid, author_did, author_handle, text, created_at, like_count, repost_count, reply_count, source)
@@ -120,7 +144,7 @@ func InsertPost(post *Post) error {
 			indexed_at = CURRENT_TIMESTAMP
 	`
 
-	_, err := db.Exec(query,
+	_, err = db.Exec(query,
 		post.URI,
 		post.CID,
 		post.AuthorDID,
@@ -145,8 +169,9 @@ func UpsertAuth(auth *Auth) error {
 
 	query := `
 		INSERT INTO auth (did, handle, access_jwt, refresh_jwt, pds_url, session_id,
-						  auth_server_url, dpop_auth_nonce, dpop_host_nonce, dpop_private_key, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+						  auth_server_url, auth_server_token_endpoint, auth_server_revocation_endpoint,
+						  dpop_auth_nonce, dpop_host_nonce, dpop_private_key, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(did) DO UPDATE SET
 			handle = excluded.handle,
 			access_jwt = excluded.access_jwt,
@@ -154,6 +179,8 @@ func UpsertAuth(auth *Auth) error {
 			pds_url = excluded.pds_url,
 			session_id = excluded.session_id,
 			auth_server_url = excluded.auth_server_url,
+			auth_server_token_endpoint = excluded.auth_server_token_endpoint,
+			auth_server_revocation_endpoint = excluded.auth_server_revocation_endpoint,
 			dpop_auth_nonce = excluded.dpop_auth_nonce,
 			dpop_host_nonce = excluded.dpop_host_nonce,
 			dpop_private_key = excluded.dpop_private_key,
@@ -168,6 +195,8 @@ func UpsertAuth(auth *Auth) error {
 		auth.PDSURL,
 		auth.SessionID,
 		auth.AuthServerURL,
+		auth.AuthServerTokenEndpoint,
+		auth.AuthServerRevocationEndpoint,
 		auth.DPoPAuthNonce,
 		auth.DPoPHostNonce,
 		auth.DPoPPrivateKey,
@@ -184,13 +213,14 @@ func GetAuth() (*Auth, error) {
 	logger.Debug("loading auth from database")
 
 	query := `SELECT did, handle, access_jwt, refresh_jwt, pds_url, session_id,
-			  auth_server_url, dpop_auth_nonce, dpop_host_nonce, dpop_private_key, updated_at
+			  auth_server_url, auth_server_token_endpoint, auth_server_revocation_endpoint,
+			  dpop_auth_nonce, dpop_host_nonce, dpop_private_key, updated_at
 			  FROM auth LIMIT 1`
 
 	var auth Auth
 	var updatedAt string
 
-	var sessionID, authServerURL, dpopAuthNonce, dpopHostNonce, dpopPrivateKey sql.NullString
+	var sessionID, authServerURL, authServerTokenEndpoint, authServerRevocationEndpoint, dpopAuthNonce, dpopHostNonce, dpopPrivateKey sql.NullString
 
 	err := db.QueryRow(query).Scan(
 		&auth.DID,
@@ -200,6 +230,8 @@ func GetAuth() (*Auth, error) {
 		&auth.PDSURL,
 		&sessionID,
 		&authServerURL,
+		&authServerTokenEndpoint,
+		&authServerRevocationEndpoint,
 		&dpopAuthNonce,
 		&dpopHostNonce,
 		&dpopPrivateKey,
@@ -211,6 +243,12 @@ func GetAuth() (*Auth, error) {
 	}
 	if authServerURL.Valid {
 		auth.AuthServerURL = authServerURL.String
+	}
+	if authServerTokenEndpoint.Valid {
+		auth.AuthServerTokenEndpoint = authServerTokenEndpoint.String
+	}
+	if authServerRevocationEndpoint.Valid {
+		auth.AuthServerRevocationEndpoint = authServerRevocationEndpoint.String
 	}
 	if dpopAuthNonce.Valid {
 		auth.DPoPAuthNonce = dpopAuthNonce.String

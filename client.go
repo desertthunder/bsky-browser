@@ -43,16 +43,18 @@ func NewBlueskyClient(ctx context.Context) (*BlueskyClient, error) {
 	store := oauth.NewMemStore()
 
 	sessionData := oauth.ClientSessionData{
-		AccountDID:              did,
-		SessionID:               auth.SessionID,
-		HostURL:                 auth.PDSURL,
-		AuthServerURL:           auth.AuthServerURL,
-		AccessToken:             auth.AccessJWT,
-		RefreshToken:            auth.RefreshJWT,
-		Scopes:                  scopes,
-		DPoPAuthServerNonce:     auth.DPoPAuthNonce,
-		DPoPHostNonce:           auth.DPoPHostNonce,
-		DPoPPrivateKeyMultibase: auth.DPoPPrivateKey,
+		AccountDID:                   did,
+		SessionID:                    auth.SessionID,
+		HostURL:                      auth.PDSURL,
+		AuthServerURL:                auth.AuthServerURL,
+		AuthServerTokenEndpoint:      auth.AuthServerTokenEndpoint,
+		AuthServerRevocationEndpoint: auth.AuthServerRevocationEndpoint,
+		AccessToken:                  auth.AccessJWT,
+		RefreshToken:                 auth.RefreshJWT,
+		Scopes:                       scopes,
+		DPoPAuthServerNonce:          auth.DPoPAuthNonce,
+		DPoPHostNonce:                auth.DPoPHostNonce,
+		DPoPPrivateKeyMultibase:      auth.DPoPPrivateKey,
 	}
 
 	if err := store.SaveSession(ctx, sessionData); err != nil {
@@ -66,6 +68,11 @@ func NewBlueskyClient(ctx context.Context) (*BlueskyClient, error) {
 		return nil, fmt.Errorf("failed to resume session: %w", err)
 	}
 
+	// TODO: OAuth token refresh fails with "invalid_grant: Token was not issued to this client"
+	// This appears to be an issue with how the OAuth client ID is configured or how the indigo
+	// library handles token refresh. The current workaround is to fall back to the existing
+	// access token, which works until it expires. A proper fix would require investigating
+	// the OAuth client configuration and ensuring the client_id matches what the auth server expects.
 	newAccessToken, err := session.RefreshTokens(ctx)
 	if err != nil {
 		logger.Warn("failed to refresh tokens, trying to use existing", "error", err)
@@ -111,7 +118,19 @@ func (c *BlueskyClient) fetchBookmarks(ctx context.Context, maxPosts int, ch cha
 			}
 
 			if bookmark.Item.FeedDefs_PostView != nil {
-				post := c.convertPostView(bookmark.Item.FeedDefs_PostView, "saved")
+				pv := bookmark.Item.FeedDefs_PostView
+
+				exists, err := PostExists(pv.Uri)
+				if err != nil {
+					logger.Warn("failed to check if post exists", "uri", pv.Uri, "error", err)
+					continue
+				}
+				if exists {
+					logger.Debug("skipping already indexed post", "uri", pv.Uri)
+					continue
+				}
+
+				post := c.convertPostView(pv, "saved")
 				if post != nil {
 					ch <- &PostResult{Post: post}
 					count++
@@ -153,7 +172,19 @@ func (c *BlueskyClient) fetchLikes(ctx context.Context, maxPosts int, ch chan<- 
 
 		for _, feedView := range resp.Feed {
 			if feedView.Post != nil {
-				post := c.convertPostView(feedView.Post, "liked")
+				pv := feedView.Post
+
+				exists, err := PostExists(pv.Uri)
+				if err != nil {
+					logger.Warn("failed to check if post exists", "uri", pv.Uri, "error", err)
+					continue
+				}
+				if exists {
+					logger.Debug("skipping already indexed post", "uri", pv.Uri)
+					continue
+				}
+
+				post := c.convertPostView(pv, "liked")
 				if post != nil {
 					ch <- &PostResult{Post: post}
 					count++
