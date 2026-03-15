@@ -9,12 +9,12 @@
 
 ## Milestone 2 — Database
 
-- [ ] Add `mattn/go-sqlite3` dependency
-- [ ] Implement `database.go` — `Open()`, auto-migrate schema on startup
-- [ ] Create `posts` table (uri PK, cid, author, text, timestamps, source)
-- [ ] Create `auth` table (did PK, handle, tokens, pds_url)
-- [ ] Create `posts_fts` FTS5 virtual table + sync triggers (insert/update/delete)
-- [ ] Write `InsertPost`, `UpsertAuth`, `SearchPosts` methods
+- [x] Add `mattn/go-sqlite3` dependency
+- [x] Implement `database.go` — `Open()`, auto-migrate schema on startup
+- [x] Create `posts` table (uri PK, cid, author, text, timestamps, source)
+- [x] Create `auth` table (did PK, handle, tokens, pds_url)
+- [x] Create `posts_fts` FTS5 virtual table + sync triggers (insert/update/delete)
+- [x] Write `InsertPost`, `UpsertAuth`, `SearchPosts` methods
 
 ## Milestone 3 — Authentication
 
